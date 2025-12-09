@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>一點透視：門口與記憶窗戶版</title>
+    <style>
+        body { margin: 0; display: flex; height: 100vh; font-family: 'Segoe UI', sans-serif; overflow: hidden; background-color: #f0f3f4; touch-action: none; }
+        
+        #toolbar {
+            width: 280px; background: #2c3e50; color: white; padding: 20px;
+            display: flex; flex-direction: column; gap: 12px; z-index: 10;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.2); user-select: none;
+            overflow-y: auto; -webkit-overflow-scrolling: touch;
+        }
+        h2 { border-bottom: 1px solid #7f8c8d; padding-bottom: 10px; margin-top: 0; font-size: 1.2rem;}
+        
+        button {
+            padding: 12px; background: #27ae60; color: white; border: none; border-radius: 8px;
+            cursor: pointer; font-size: 1rem; font-weight: bold; transition: 0.2s; width: 100%;
+            touch-action: manipulation; margin-bottom: 5px;
+        }
+        button:active { transform: scale(0.98); }
+        button.danger { background: #e74c3c; margin-top: 5px;}
+        button.mode-btn { background: #e67e22; border: 2px solid #d35400;}
+        button.exit-btn { background: #7f8c8d; }
+        button.undo-btn { background: #f39c12; margin-bottom: 10px; }
+        
+        /* 工具切換按鈕 */
+        .tool-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 15px; }
+        .tool-btn { font-size: 0.9rem; background: #34495e; opacity: 0.6; padding: 10px 5px;}
+        .tool-btn.active { background: #3498db; opacity: 1; border: 2px solid white; }
+        .tool-btn.eraser.active { background: #e74c3c; }
+
+        .control-group { background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px; margin-bottom: 5px;}
+        label { display: block; margin-bottom: 5px; font-size: 0.9rem; color: #ecf0f1; font-weight: bold;}
+        input[type=range] { width: 100%; height: 25px; cursor: pointer; }
+        
+        .color-toggles { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px;}
+        .btn-toggle { display: flex; align-items: center; justify-content: space-between; background: #34495e; padding: 10px; }
+        .btn-toggle.inactive { opacity: 0.5; background: #2c3e50; text-decoration: line-through;}
+        .color-indicator { width: 15px; height: 15px; border-radius: 50%; display: inline-block; margin-right: 8px; border: 2px solid white;}
+
+        #coloring-controls { display: none; background: #34495e; padding: 15px 10px; border-radius: 8px; animation: fadeIn 0.3s; }
+        .palette-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 15px; }
+        .color-swatch {
+            width: 100%; aspect-ratio: 1; border-radius: 50%; cursor: pointer; 
+            border: 2px solid rgba(255,255,255,0.3); box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        .color-swatch.selected { border: 3px solid white; transform: scale(1.1); }
+
+        .mix-container { background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; text-align: center; }
+        .preview-box { width: 100%; height: 40px; border-radius: 5px; margin-bottom: 10px; border: 2px solid white; background: #fff; }
+        input[type=range].lightness-slider {
+            -webkit-appearance: none; width: 100%; height: 10px; border-radius: 5px;
+            background: linear-gradient(to right, #000000 0%, #888888 50%, #ffffff 100%); outline: none; margin-top: 5px;
+        }
+        input[type=range].lightness-slider::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none; width: 20px; height: 20px; border-radius: 50%; 
+            background: #f1c40f; border: 2px solid white; cursor: pointer;
+        }
+
+        #canvas-container { flex-grow: 1; position: relative; background: #85c1e9; overflow: hidden; touch-action: none;}
+        svg { width: 100%; height: 100%; display: block; touch-action: none; }
+
+        .ground { fill: #d5d8dc; }
+        .sidewalk { fill: #ffffff; stroke: #bdc3c7; stroke-width: 1; }
+        .street { fill: #566573; stroke: #2c3e50; stroke-width: 1; }
+        .horizon-line { stroke: #c0392b; stroke-width: 2; }
+        .vp-handle { cursor: move; filter: drop-shadow(0 0 5px white); transition: r 0.2s; z-index: 1000;}
+        
+        .building-group { cursor: grab; }
+        .face-front { fill: #3498db; stroke: #21618c; stroke-width: 2; vector-effect: non-scaling-stroke; transition: fill 0.1s;}
+        .face-side  { fill: #2ecc71; stroke: #1e8449; stroke-width: 2; vector-effect: non-scaling-stroke; transition: fill 0.1s;}
+        .face-top   { fill: #f1c40f; stroke: #d4ac0d; stroke-width: 1; vector-effect: non-scaling-stroke; transition: fill 0.1s;}
+
+        .window-shape { fill: #ecf0f1; stroke: #bdc3c7; stroke-width: 1; vector-effect: non-scaling-stroke; opacity: 0.9; cursor: pointer; }
+        .window-shape:hover { opacity: 1; stroke: #f39c12; }
+        
+        /* 門的顏色深一點 */
+        .door-shape { fill: #5d4037; stroke: #3e2723; stroke-width: 1; vector-effect: non-scaling-stroke; cursor: pointer;}
+        .door-shape:hover { stroke: #f39c12; stroke-width: 2;}
+
+        .coloring-mode .building-group { cursor: pointer; }
+        .face-selected { stroke: #ffffff !important; stroke-width: 4px !important; stroke-dasharray: 5,5; animation: dash 1s linear infinite; }
+        .guide-line { stroke-width: 2; fill: none; stroke-dasharray: 6,4; pointer-events: none; transition: opacity 0.3s; }
+        .resize-handle { fill: white; stroke: #2980b9; stroke-width: 2; cursor: pointer; transition: r 0.1s; r: 8; } 
+        .active-handle { fill: #f1c40f; r: 10; }
+        .window-handle { fill: #2ecc71; stroke: white; stroke-width: 2; cursor: pointer; r: 6; }
+        
+        @keyframes dash { to { stroke-dashoffset: 20; } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+    </style>
+</head>
+<body>
+
+    <div id="toolbar">
+        <h2>透視城市 V13</h2>
+        
+        <div id="standard-controls">
+            <button class="mode-btn" onclick="enterColoringMode()">🎨 進入裝修模式</button>
+            <div class="control-group">
+                <label>馬路與行人路</label>
+                <input type="range" id="streetSlider" min="20" max="500" value="250" oninput="updateEnvironment()">
+                <input type="range" id="sidewalkSlider" min="0" max="200" value="60" oninput="updateEnvironment()" style="margin-top:5px">
+            </div>
+            <div class="control-group">
+                <label>輔助線</label>
+                <div class="color-toggles">
+                    <button class="btn-toggle" onclick="toggleLineColor(0, this)"><span><span class="color-indicator" style="background: #FF0000;"></span>紅色</span> <span>👁️</span></button>
+                    <button class="btn-toggle" onclick="toggleLineColor(1, this)"><span><span class="color-indicator" style="background: #FF8C00;"></span>橙色</span> <span>👁️</span></button>
+                    <button class="btn-toggle" onclick="toggleLineColor(2, this)"><span><span class="color-indicator" style="background: #9b59b6;"></span>紫色</span> <span>👁️</span></button>
+                    <button class="btn-toggle" onclick="toggleLineColor(3, this)"><span><span class="color-indicator" style="background: #000000;"></span>黑色</span> <span>👁️</span></button>
+                </div>
+            </div>
+            <div>
+                <button onclick="addBuilding()">+ 加入建築物 (隨機)</button>
+                <button class="danger" onclick="clearBuildings()">清除所有建築</button>
+            </div>
+        </div>
+
+        <div id="coloring-tools" style="display: none;">
+            <button class="exit-btn" onclick="exitColoringMode()">🔙 完成並離開</button>
+            <button class="undo-btn" onclick="performUndo()">↩️ 還原上一步</button>
+            
+            <div class="control-group">
+                <label>選擇工具：</label>
+                <div class="tool-switch">
+                    <button id="tool-paint" class="tool-btn active" onclick="setSubTool('paint')">🖌️ 填色</button>
+                    <button id="tool-window" class="tool-btn" onclick="setSubTool('window')">🪟 加窗戶</button>
+                    <button id="tool-door" class="tool-btn" onclick="setSubTool('door')">🚪 加門</button>
+                    <button id="tool-eraser" class="tool-btn eraser" onclick="setSubTool('eraser')">🧽 清除</button>
+                </div>
+                <p id="tool-instruction" style="font-size: 0.85rem; color: #bdc3c7; margin-top:5px; min-height: 40px;">
+                    點擊牆面來改變顏色。
+                </p>
+            </div>
+
+            <div id="coloring-controls">
+                <div class="palette-grid" id="paletteGrid"></div>
+                <div class="mix-container">
+                    <label>深淺調整</label>
+                    <div id="colorPreview" class="preview-box"></div>
+                    <input type="range" id="lightnessSlider" class="lightness-slider" min="0" max="100" value="50" oninput="updateColorMix()">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="canvas-container">
+        <svg id="mainSvg" 
+             onmousemove="drag(event)" ontouchmove="drag(event)" 
+             onmouseup="endDrag(event)" ontouchend="endDrag(event)"
+             onmousedown="deselectAll(event)">
+            <rect id="ground-rect" class="ground" />
+            <polygon id="sidewalk-poly" class="sidewalk" />
+            <polygon id="street-poly" class="street" />
+            <line id="horizon" class="horizon-line" />
+            <g id="buildings-layer"></g>
+            <g id="guide-lines-layer"></g>
+            <g id="controls-layer"></g>
+            <circle id="vp-point" class="vp-handle" cx="0" cy="0" r="10" fill="red" stroke="white" stroke-width="3" />
+        </svg>
+    </div>
+
+    <script>
+        const svg = document.getElementById('mainSvg');
+        const buildingsLayer = document.getElementById('buildings-layer');
+        const guideLayer = document.getElementById('guide-lines-layer');
+        const controlsLayer = document.getElementById('controls-layer');
+        const standardControls = document.getElementById('standard-controls');
+        const coloringTools = document.getElementById('coloring-tools');
+        const coloringControls = document.getElementById('coloring-controls');
+        const paletteGrid = document.getElementById('paletteGrid');
+        const lightnessSlider = document.getElementById('lightnessSlider');
+        const colorPreview = document.getElementById('colorPreview');
+        const toolInstruction = document.getElementById('tool-instruction');
+        
+        const horizonLine = document.getElementById('horizon');
+        const streetPoly = document.getElementById('street-poly');
+        const sidewalkPoly = document.getElementById('sidewalk-poly');
+        const groundRect = document.getElementById('ground-rect');
+        const vpPoint = document.getElementById('vp-point');
+        const streetSlider = document.getElementById('streetSlider');
+        const sidewalkSlider = document.getElementById('sidewalkSlider');
+
+        let width, height, vpX, vpY;
+        let selectedBuilding = null;
+        let selectedWindow = null;
+        let dragMode = null;
+        let activeHandleIndex = -1;
+        let offset = { x: 0, y: 0 };
+        let startProps = {};
+
+        // 狀態與記憶
+        let isEditMode = false;
+        let currentSubTool = 'paint';
+        let targetFace = null;
+        let currentHue = 0, currentSat = 0, baseLightness = 50;
+        let undoStack = []; 
+        let buildingCounter = 0; 
+        
+        // --- 記憶上次的窗戶尺寸 ---
+        // 預設寬 40%, 高 30%
+        let lastWindowRect = { w: 0.4, h: 0.3 };
+
+        let buildingsData = {}; 
+
+        const LINE_COLORS = ['#FF0000', '#FF8C00', '#9b59b6', '#000000']; 
+        let colorVisibility = [true, true, true, true]; 
+
+        const POSTER_COLORS = [
+            { hex: '#FFFFFF', h:0, s:0, l:100 }, { hex: '#FFF200', h:57, s:100, l:50 },
+            { hex: '#FFB700', h:43, s:100, l:50 }, { hex: '#FF4500', h:16, s:100, l:50 },
+            { hex: '#DC143C', h:348, s:83, l:47 }, { hex: '#8B4513', h:25, s:76, l:31 },
+            { hex: '#99CC32', h:80, s:60, l:50 }, { hex: '#008000', h:120, s:100, l:25 },
+            { hex: '#00BFFF', h:195, s:100, l:50 }, { hex: '#00008B', h:240, s:100, l:27 },
+            { hex: '#8A2BE2', h:271, s:76, l:53 }, { hex: '#000000', h:0, s:0, l:0 }
+        ];
+
+        function initScene() {
+            width = svg.clientWidth; height = svg.clientHeight;
+            if (!vpX) vpX = width / 2; if (!vpY) vpY = height / 2;
+            updateEnvironment(); generatePalette();
+        }
+
+        function generatePalette() {
+            paletteGrid.innerHTML = '';
+            POSTER_COLORS.forEach((c, index) => {
+                const swatch = document.createElement('div');
+                swatch.className = 'color-swatch';
+                swatch.style.backgroundColor = c.hex;
+                swatch.onclick = () => selectBaseColor(index, swatch);
+                paletteGrid.appendChild(swatch);
+            });
+            selectBaseColor(0, paletteGrid.children[0]);
+        }
+        function selectBaseColor(index, swatchEl) {
+            document.querySelectorAll('.color-swatch').forEach(el => el.classList.remove('selected'));
+            swatchEl.classList.add('selected');
+            const c = POSTER_COLORS[index];
+            currentHue = c.h; currentSat = c.s; baseLightness = c.l;
+            lightnessSlider.value = 50; updateColorMix();
+        }
+        function updateColorMix() {
+            const slideVal = parseInt(lightnessSlider.value);
+            let finalL = slideVal >= 50 ? baseLightness + (100 - baseLightness) * ((slideVal - 50) / 50) : baseLightness * (slideVal / 50);
+            const finalColorStr = `hsl(${currentHue}, ${currentSat}%, ${finalL}%)`;
+            colorPreview.style.backgroundColor = finalColorStr;
+            if (targetFace && currentSubTool === 'paint') {
+                pushUndo(); targetFace.style.fill = finalColorStr;
+                const bid = targetFace.parentNode.id;
+                const faceType = targetFace.getAttribute('class').replace('face-', '').replace('face-selected', '').trim();
+                if(buildingsData[bid]) buildingsData[bid].colors[faceType] = finalColorStr;
+            }
+        }
+        function updateEnvironment() {
+            vpPoint.setAttribute('cx', vpX); vpPoint.setAttribute('cy', vpY);
+            horizonLine.setAttribute('x1', 0); horizonLine.setAttribute('y1', vpY);
+            horizonLine.setAttribute('x2', width); horizonLine.setAttribute('y2', vpY);
+            groundRect.setAttribute('x', 0); groundRect.setAttribute('y', vpY);
+            groundRect.setAttribute('width', width); groundRect.setAttribute('height', Math.max(0, height - vpY));
+            const streetW = parseInt(streetSlider.value);
+            const sidewalkW = parseInt(sidewalkSlider.value) + streetW;
+            streetPoly.setAttribute('points', `${vpX},${vpY} ${vpX + streetW},${height} ${vpX - streetW},${height}`);
+            sidewalkPoly.setAttribute('points', `${vpX},${vpY} ${vpX + sidewalkW},${height} ${vpX - sidewalkW},${height}`);
+            updateAllBuildings();
+            if (selectedBuilding && !isEditMode) updateSelectionHandles(selectedBuilding);
+        }
+        window.addEventListener('resize', () => { width = svg.clientWidth; height = svg.clientHeight; updateEnvironment(); });
+        setTimeout(initScene, 0);
+
+        function pushUndo() {
+            const state = JSON.parse(JSON.stringify(buildingsData));
+            undoStack.push(state);
+            if(undoStack.length > 20) undoStack.shift();
+        }
+        function performUndo() {
+            if(undoStack.length === 0) return;
+            buildingsData = undoStack.pop();
+            document.querySelectorAll('.building-group').forEach(g => {
+                const bData = buildingsData[g.id];
+                if(bData) {
+                    if(bData.colors.front) g.querySelector('.face-front').style.fill = bData.colors.front;
+                    if(bData.colors.side) g.querySelector('.face-side').style.fill = bData.colors.side;
+                    if(bData.colors.top) g.querySelector('.face-top').style.fill = bData.colors.top;
+                }
+                updateSingleBuilding(g);
+            });
+            controlsLayer.innerHTML = '';
+        }
+
+        function enterColoringMode() {
+            isEditMode = true; standardControls.style.display = 'none'; coloringTools.style.display = 'block';
+            selectedBuilding = null; controlsLayer.innerHTML = ''; svg.classList.add('coloring-mode');
+            setSubTool('paint');
+        }
+        function exitColoringMode() {
+            isEditMode = false; standardControls.style.display = 'block'; coloringTools.style.display = 'none';
+            if (targetFace) targetFace.classList.remove('face-selected');
+            targetFace = null; selectedWindow = null; controlsLayer.innerHTML = '';
+            svg.classList.remove('coloring-mode');
+        }
+        function setSubTool(tool) {
+            currentSubTool = tool;
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('tool-'+tool).classList.add('active');
+            
+            coloringControls.style.display = (tool === 'paint') ? 'none' : 'none';
+            
+            const tip = document.getElementById('tool-instruction');
+            if (tool === 'paint') tip.innerText = "點擊牆面來改變顏色。";
+            else if (tool === 'window') tip.innerText = "點擊牆面加入窗戶 (記憶上次大小)。";
+            else if (tool === 'door') tip.innerText = "點擊側面 (綠色) 加入門口，門會自動貼地。";
+            else if (tool === 'eraser') tip.innerText = "點擊窗戶/門刪除，或點擊牆面還原顏色。";
+            
+            if (targetFace) targetFace.classList.remove('face-selected');
+            targetFace = null; selectedWindow = null; controlsLayer.innerHTML = '';
+        }
+
+        function addBuilding() {
+            const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            g.setAttribute('class', 'building-group');
+            const startW = 80; const startH = 120;
+            const streetW = parseInt(streetSlider.value);
+            const zone = Math.floor(Math.random() * 3);
+            let startX;
+            if (zone === 0) startX = Math.max(20, Math.random() * (vpX - streetW - 100));
+            else if (zone === 1) startX = vpX - streetW + Math.random() * (streetW * 2 - startW);
+            else startX = vpX + streetW + Math.random() * (width - (vpX + streetW) - startW);
+            
+            const startY = Math.max(vpY + 50, Math.random() * (height - startH - 50));
+            g.dataset.x = startX; g.dataset.y = startY; g.dataset.w = startW; g.dataset.h = startH;
+            g.id = 'b_' + Date.now();
+            g.dataset.colorIndex = buildingCounter % 4; buildingCounter++;
+
+            buildingsData[g.id] = { colors: { front: '#3498db', side: '#2ecc71', top: '#f1c40f' }, windows: [] };
+
+            const top = document.createElementNS("http://www.w3.org/2000/svg", "polygon"); top.setAttribute('class', 'face-top');
+            const side = document.createElementNS("http://www.w3.org/2000/svg", "polygon"); side.setAttribute('class', 'face-side');
+            const front = document.createElementNS("http://www.w3.org/2000/svg", "rect"); front.setAttribute('class', 'face-front');
+            g.appendChild(top); g.appendChild(side); g.appendChild(front);
+            buildingsLayer.appendChild(g);
+            g.addEventListener('mousedown', (e) => onBuildingInteraction(e, g));
+            g.addEventListener('touchstart', (e) => onBuildingInteraction(e, g), {passive: false});
+            updateSingleBuilding(g);
+            if(!isEditMode) selectBuilding(g);
+        }
+
+        function addWindow(buildingId, faceType) {
+            pushUndo();
+            const winId = Date.now();
+            // 使用記憶的尺寸
+            const newWindow = { 
+                id: winId, type: faceType, isDoor: false,
+                relX: 0.25, relY: 0.25, 
+                relW: lastWindowRect.w, relH: lastWindowRect.h 
+            };
+            buildingsData[buildingId].windows.push(newWindow);
+            updateSingleBuilding(document.getElementById(buildingId));
+        }
+
+        // 新增：加入門口
+        function addDoor(buildingId, faceType) {
+            if (faceType !== 'side') return; // 只能加在側面
+            pushUndo();
+            const winId = Date.now();
+            // 門口預設大小，強制貼地 (relY + relH = 1)
+            const dW = 0.4; const dH = 0.5;
+            const newDoor = {
+                id: winId, type: faceType, isDoor: true,
+                relX: 0.3, relY: 1 - dH, // 強制貼地
+                relW: dW, relH: dH
+            };
+            buildingsData[buildingId].windows.push(newDoor);
+            updateSingleBuilding(document.getElementById(buildingId));
+        }
+
+        function updateSingleBuilding(g) {
+            let x = parseFloat(g.dataset.x); let y = parseFloat(g.dataset.y);
+            let w = parseFloat(g.dataset.w); let h = parseFloat(g.dataset.h);
+            let cIndex = parseInt(g.dataset.colorIndex);
+
+            const frontEl = g.querySelector('.face-front');
+            const sideEl = g.querySelector('.face-side');
+            const topEl = g.querySelector('.face-top');
+
+            frontEl.setAttribute('x', x); frontEl.setAttribute('y', y); frontEl.setAttribute('width', w); frontEl.setAttribute('height', h);
+            
+            const fl_tl = {x: x, y: y}; const fl_tr = {x: x + w, y: y};
+            const fl_bl = {x: x, y: y + h}; const fl_br = {x: x + w, y: y + h};
+            
+            const depthFactor = 0.25;
+            function project(p) { return { x: p.x + (vpX - p.x) * depthFactor, y: p.y + (vpY - p.y) * depthFactor }; }
+            const bl_tl = project(fl_tl); const bl_tr = project(fl_tr); const bl_br = project(fl_br); const bl_bl = project(fl_bl);
+
+            const isLeft = (x + w/2) < vpX;
+            let sidePoints = isLeft ? `${fl_tr.x},${fl_tr.y} ${bl_tr.x},${bl_tr.y} ${bl_br.x},${bl_br.y} ${fl_br.x},${fl_br.y}` : `${fl_tl.x},${fl_tl.y} ${bl_tl.x},${bl_tl.y} ${bl_bl.x},${bl_bl.y} ${fl_bl.x},${fl_bl.y}`;
+            sideEl.setAttribute('points', sidePoints);
+            if (y > vpY) { topEl.setAttribute('points', `${fl_tl.x},${fl_tl.y} ${bl_tl.x},${bl_tl.y} ${bl_tr.x},${bl_tr.y} ${fl_tr.x},${fl_tr.y}`); topEl.style.display = "block"; } else { topEl.style.display = "none"; }
+            drawGuideLinesForBuilding(g.id, fl_tl, fl_tr, fl_bl, fl_br, cIndex);
+
+            const oldWindows = g.querySelectorAll('.window-shape, .door-shape');
+            oldWindows.forEach(el => el.remove());
+
+            const bData = buildingsData[g.id];
+            if (bData && bData.windows) {
+                bData.windows.forEach(win => {
+                    let winEl;
+                    let p1, p2, p3, p4;
+
+                    if (win.type === 'front') {
+                        const wx = x + w * win.relX; const wy = y + h * win.relY;
+                        const ww = w * win.relW; const wh = h * win.relH;
+                        winEl = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                        winEl.setAttribute('x', wx); winEl.setAttribute('y', wy);
+                        winEl.setAttribute('width', ww); winEl.setAttribute('height', wh);
+                        p1 = {x: wx, y: wy}; p2 = {x: wx+ww, y: wy}; p3 = {x: wx+ww, y: wy+wh}; p4 = {x: wx, y: wy+wh};
+                    } 
+                    else if (win.type === 'side') {
+                        let sP1, sP2, sP3, sP4;
+                        if (isLeft) { sP1 = fl_tr; sP2 = bl_tr; sP3 = bl_br; sP4 = fl_br; } 
+                        else { sP1 = fl_tl; sP2 = bl_tl; sP3 = bl_bl; sP4 = fl_bl; }
+                        function lerp(p1, p2, t) { return { x: p1.x + (p2.x - p1.x) * t, y: p1.y + (p2.y - p1.y) * t }; }
+                        const wTopNear = lerp(sP1, sP4, win.relY); const wBotNear = lerp(sP1, sP4, win.relY + win.relH);
+                        const wTopFar = lerp(sP2, sP3, win.relY); const wBotFar = lerp(sP2, sP3, win.relY + win.relH);
+                        p1 = lerp(wTopNear, wTopFar, win.relX); p2 = lerp(wTopNear, wTopFar, win.relX + win.relW);
+                        p3 = lerp(wBotNear, wBotFar, win.relX + win.relW); p4 = lerp(wBotNear, wBotFar, win.relX);
+                        
+                        winEl = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+                        winEl.setAttribute('points', `${p1.x},${p1.y} ${p2.x},${p2.y} ${p3.x},${p3.y} ${p4.x},${p4.y}`);
+                    }
+                    
+                    winEl.setAttribute('class', win.isDoor ? 'door-shape' : 'window-shape');
+                    winEl.dataset.winId = win.id;
+                    g.appendChild(winEl);
+                    winEl.addEventListener('mousedown', (e) => onWindowInteraction(e, g.id, win.id, [p1,p2,p3,p4]));
+                    winEl.addEventListener('touchstart', (e) => onWindowInteraction(e, g.id, win.id, [p1,p2,p3,p4]), {passive: false});
+                });
+            }
+        }
+        function updateAllBuildings() { document.querySelectorAll('.building-group').forEach(g => updateSingleBuilding(g)); }
+
+        function drawGuideLinesForBuilding(bid, p1, p2, p3, p4, cIndex) { /* 同上 */ 
+            let lineGroup = document.getElementById('lines-' + bid);
+            if (!lineGroup) { lineGroup = document.createElementNS("http://www.w3.org/2000/svg", "g"); lineGroup.id = 'lines-' + bid; lineGroup.dataset.colorIndex = cIndex; guideLayer.appendChild(lineGroup); }
+            lineGroup.style.display = colorVisibility[cIndex] ? 'block' : 'none';
+            let lines = lineGroup.querySelectorAll('line');
+            if (lines.length === 0) { for(let i=0; i<4; i++) { const l = document.createElementNS("http://www.w3.org/2000/svg", "line"); l.setAttribute('class', 'guide-line'); lineGroup.appendChild(l); } lines = lineGroup.querySelectorAll('line'); }
+            const color = LINE_COLORS[cIndex];
+            [p1, p2, p3, p4].forEach((p, i) => { lines[i].setAttribute('x1', p.x); lines[i].setAttribute('y1', p.y); lines[i].setAttribute('x2', vpX); lines[i].setAttribute('y2', vpY); lines[i].setAttribute('stroke', color); });
+        }
+        function toggleLineColor(index, btn) { colorVisibility[index] = !colorVisibility[index]; const groups = guideLayer.querySelectorAll('g'); groups.forEach(g => { const cIndex = parseInt(g.dataset.colorIndex); if (!isNaN(cIndex)) { g.style.display = colorVisibility[cIndex] ? 'block' : 'none'; } }); }
+
+        function onWindowInteraction(e, bid, wid, corners) {
+            e.preventDefault(); e.stopPropagation();
+            if (!isEditMode) return;
+            if (currentSubTool === 'eraser') {
+                pushUndo();
+                const bData = buildingsData[bid];
+                bData.windows = bData.windows.filter(w => w.id !== wid);
+                updateSingleBuilding(document.getElementById(bid));
+                controlsLayer.innerHTML = '';
+            } else {
+                selectedWindow = { bid: bid, wid: wid };
+                updateWindowHandles(corners);
+                dragMode = 'window-move';
+                const pt = getPoint(e);
+                const winData = buildingsData[bid].windows.find(w => w.id === wid);
+                startProps = { mx: pt.x, my: pt.y, rx: winData.relX, ry: winData.relY, rw: winData.relW, rh: winData.relH, isDoor: winData.isDoor };
+            }
+        }
+
+        function updateWindowHandles(corners) {
+            controlsLayer.innerHTML = '';
+            corners.forEach((c, i) => {
+                const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                circle.setAttribute('cx', c.x); circle.setAttribute('cy', c.y);
+                circle.setAttribute('class', 'window-handle');
+                circle.addEventListener('mousedown', (e) => onWindowHandleStart(e, i));
+                circle.addEventListener('touchstart', (e) => onWindowHandleStart(e, i), {passive: false});
+                controlsLayer.appendChild(circle);
+            });
+        }
+        function onWindowHandleStart(e, index) {
+            e.preventDefault(); e.stopPropagation();
+            dragMode = 'window-resize'; activeHandleIndex = index;
+            const pt = getPoint(e);
+            const winData = buildingsData[selectedWindow.bid].windows.find(w => w.id === selectedWindow.wid);
+            startProps = { mx: pt.x, my: pt.y, rx: winData.relX, ry: winData.relY, rw: winData.relW, rh: winData.relH, isDoor: winData.isDoor };
+        }
+
+        function onBuildingInteraction(e, g) {
+            e.preventDefault(); e.stopPropagation();
+            if (isEditMode) {
+                const clicked = e.target;
+                const isSide = clicked.classList.contains('face-side');
+                const isFront = clicked.classList.contains('face-front');
+                
+                if (currentSubTool === 'eraser') {
+                    pushUndo();
+                    const faceType = clicked.getAttribute('class').replace('face-', '').trim();
+                    const defaultColor = faceType === 'front' ? '#3498db' : (faceType === 'side' ? '#2ecc71' : '#f1c40f');
+                    clicked.style.fill = defaultColor;
+                    if(buildingsData[g.id]) buildingsData[g.id].colors[faceType] = defaultColor;
+                    return;
+                }
+                if (currentSubTool === 'paint') {
+                    if (isSide || isFront || clicked.classList.contains('face-top')) {
+                        if (targetFace) targetFace.classList.remove('face-selected');
+                        targetFace = clicked; targetFace.classList.add('face-selected');
+                        coloringControls.style.display = 'block';
+                        selectedWindow = null; controlsLayer.innerHTML = ''; 
+                    }
+                } else if (currentSubTool === 'window') {
+                    if (isFront) addWindow(g.id, 'front');
+                    else if (isSide) addWindow(g.id, 'side');
+                } else if (currentSubTool === 'door') {
+                    if (isSide) addDoor(g.id, 'side'); // 門只能加在側面
+                }
+                return;
+            }
+            selectBuilding(g); dragMode = 'move';
+            const pt = getPoint(e); offset.x = pt.x - parseFloat(g.dataset.x); offset.y = pt.y - parseFloat(g.dataset.y);
+        }
+
+        function getPoint(evt) {
+            const pt = svg.createSVGPoint();
+            if (evt.touches && evt.touches.length > 0) { pt.x = evt.touches[0].clientX; pt.y = evt.touches[0].clientY; } else { pt.x = evt.clientX; pt.y = evt.clientY; }
+            return pt.matrixTransform(svg.getScreenCTM().inverse());
+        }
+
+        function drag(evt) {
+            if (!dragMode) return;
+            evt.preventDefault(); const pt = getPoint(evt);
+
+            if (dragMode === 'vp') { vpX = pt.x; vpY = pt.y; updateEnvironment(); } 
+            else if (dragMode === 'move' && selectedBuilding) {
+                selectedBuilding.dataset.x = pt.x - offset.x; selectedBuilding.dataset.y = pt.y - offset.y;
+                updateSingleBuilding(selectedBuilding); updateSelectionHandles(selectedBuilding);
+            }
+            else if (dragMode === 'resize' && selectedBuilding) {
+                let dx = pt.x - startProps.mx; let dy = pt.y - startProps.my;
+                let nx=startProps.x, ny=startProps.y, nw=startProps.w, nh=startProps.h;
+                if (activeHandleIndex === 2) { nw+=dx; nh+=dy; } else if (activeHandleIndex === 1) { nw+=dx; ny+=dy; nh-=dy; } else if (activeHandleIndex === 3) { nx+=dx; nw-=dx; nh+=dy; } else if (activeHandleIndex === 0) { nx+=dx; ny+=dy; nw-=dx; nh-=dy; }
+                if (nw < 20) nw = 20; if (nh < 20) nh = 20;
+                selectedBuilding.dataset.x = nx; selectedBuilding.dataset.y = ny; selectedBuilding.dataset.w = nw; selectedBuilding.dataset.h = nh;
+                updateSingleBuilding(selectedBuilding); updateSelectionHandles(selectedBuilding);
+            }
+            else if ((dragMode === 'window-move' || dragMode === 'window-resize') && selectedWindow) {
+                const g = document.getElementById(selectedWindow.bid);
+                const w = parseFloat(g.dataset.w); const h = parseFloat(g.dataset.h);
+                const dRx = (pt.x - startProps.mx) / w; 
+                const dRy = (pt.y - startProps.my) / h;
+                const winData = buildingsData[selectedWindow.bid].windows.find(w => w.id === selectedWindow.wid);
+                
+                if (dragMode === 'window-move') {
+                    winData.relX = Math.max(0, Math.min(1 - winData.relW, startProps.rx + dRx));
+                    if (startProps.isDoor) {
+                        // 門不能上下移動，強制貼地
+                        winData.relY = 1 - winData.relH;
+                    } else {
+                        winData.relY = Math.max(0, Math.min(1 - winData.relH, startProps.ry + dRy));
+                    }
+                } else {
+                    // Resize
+                    if (activeHandleIndex === 2) { winData.relW = startProps.rw + dRx; winData.relH = startProps.rh + dRy; }
+                    else if (activeHandleIndex === 1) { winData.relW = startProps.rw + dRx; winData.relY = startProps.ry + dRy; winData.relH = startProps.rh - dRy; }
+                    else if (activeHandleIndex === 3) { winData.relX = startProps.rx + dRx; winData.relW = startProps.rw - dRx; winData.relH = startProps.rh + dRy; }
+                    else if (activeHandleIndex === 0) { winData.relX = startProps.rx + dRx; winData.relY = startProps.ry + dRy; winData.relW = startProps.rw - dRx; winData.relH = startProps.rh - dRy; }
+                    
+                    if (winData.relW < 0.1) winData.relW = 0.1;
+                    if (winData.relH < 0.1) winData.relH = 0.1;
+                    
+                    if (startProps.isDoor) {
+                        // 門調整大小時，強制貼地 (relY = 1 - relH)
+                        winData.relY = 1 - winData.relH;
+                    }
+                }
+                updateSingleBuilding(g);
+            }
+        }
+
+        function endDrag(evt) { 
+            if (dragMode && dragMode.startsWith('window') && !startProps.isDoor) {
+                // 如果是普通窗戶被調整了，記憶它的大小
+                const winData = buildingsData[selectedWindow.bid].windows.find(w => w.id === selectedWindow.wid);
+                if (winData) {
+                    lastWindowRect.w = winData.relW;
+                    lastWindowRect.h = winData.relH;
+                }
+            }
+            dragMode = null; activeHandleIndex = -1; 
+        }
+
+        function selectBuilding(g) { selectedBuilding = g; updateSelectionHandles(g); }
+        function deselectAll(e) { 
+            if(isEditMode) return; 
+            if (e.target.id === 'mainSvg' || e.target.classList.contains('ground') || e.target.classList.contains('street') || e.target.classList.contains('sidewalk')) { 
+                selectedBuilding = null; controlsLayer.innerHTML = ''; 
+            } 
+        }
+        function updateSelectionHandles(g) {
+            controlsLayer.innerHTML = ''; if (!g) return;
+            const x = parseFloat(g.dataset.x); const y = parseFloat(g.dataset.y); const w = parseFloat(g.dataset.w); const h = parseFloat(g.dataset.h);
+            const corners = [{x: x, y: y}, {x: x + w, y: y}, {x: x + w, y: y + h}, {x: x, y: y + h}];
+            corners.forEach((c, index) => {
+                const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                circle.setAttribute('cx', c.x); circle.setAttribute('cy', c.y); circle.setAttribute('class', 'resize-handle');
+                circle.addEventListener('mousedown', (e) => onHandleStart(e, index, g));
+                circle.addEventListener('touchstart', (e) => onHandleStart(e, index, g), {passive: false});
+                controlsLayer.appendChild(circle);
+            });
+        }
+        function onHandleStart(e, index, g) {
+            if(isEditMode) return; e.preventDefault(); e.stopPropagation();
+            dragMode = 'resize'; activeHandleIndex = index; selectedBuilding = g;
+            startProps = { x: parseFloat(g.dataset.x), y: parseFloat(g.dataset.y), w: parseFloat(g.dataset.w), h: parseFloat(g.dataset.h), mx: getPoint(e).x, my: getPoint(e).y };
+        }
+        vpPoint.addEventListener('mousedown', (e) => { if(isEditMode) return; e.stopPropagation(); dragMode = 'vp'; });
+        vpPoint.addEventListener('touchstart', (e) => { if(isEditMode) return; e.preventDefault(); e.stopPropagation(); dragMode = 'vp'; }, {passive: false});
+
+        function clearBuildings() { 
+            pushUndo();
+            buildingsLayer.innerHTML = ''; guideLayer.innerHTML = ''; controlsLayer.innerHTML = ''; selectedBuilding = null; buildingCounter = 0; buildingsData = {}; if(isEditMode) { coloringControls.style.display = 'none'; targetFace = null; } 
+        }
+    </script>
+</body>
+</html>
